@@ -1,12 +1,42 @@
 #!/usr/bin/env luajit
 
+local argparse = require("argparse")
+local parser = argparse("./init.lua", "A daemon to automatically record CS:GO demos.")
+parser:option("--password", "RCON password.")
+parser:option("--path", "Path to 'csgo/'.")
+parser:flag("--gzip", "Compress demos with gzip.")
+parser:flag("--verbose", "Output extra info.")
+local args = parser:parse()
+if args.password == nil then
+	parser:error("you must specify RCON password")
+end
+if args.path ~= nil then
+	assert(args.path:find("[^%w_/ -]") == nil)
+end
+if args.gzip and args.path == nil then
+	parser:error("you must specify path to compress demos")
+end
+local printf_verbose, print_warn_verbose
+if args.verbose then
+	function printf_verbose(...)
+		return print(string.format(...))
+	end
+	function print_warn_verbose(str)
+		return print(str)
+	end
+else
+	function printf_verbose() end
+	function print_warn_verbose(str, str2)
+		return print(string.format("%s: %q", str, str2))
+	end
+end
+
 local function frombit(n)
 	if n < 0 then
 		return 2^32+n
 	end
 	return n
 end
-
 local function pack_uint32_le(n)
 	assert(n >= 0)
 	assert(n <= 2^32-1)
@@ -38,7 +68,7 @@ local function send_rcon(client, packet_type, body, id)
 		body = ""
 	end
 	local size = #body+10
-	print(string.format("sent: size: %s, id: 0x%8x, type: %d, body: %q", #body+10, id, packet_type, body))
+	printf_verbose("sent: size: %s, id: 0x%8x, type: %d, body: %q", #body+10, id, packet_type, body)
 	assert(client:send(
 		pack_uint32_le(size)
 		..pack_uint32_le(id)
@@ -56,7 +86,7 @@ local function receive_rcon(client)
 	local packet_type = unpack_uint32_le(assert(client:receive(4)))
 	local body = assert(client:receive(size-4-4-1-1))
 	assert(client:receive(2) == "\x00\x00")
-	print(string.format("received: size: %s, id: 0x%8x, type: %d, body: %q", size, id, packet_type, body))
+	printf_verbose("received: size: %s, id: 0x%8x, type: %d, body: %q", size, id, packet_type, body)
 	return size, id, packet_type, body
 end
 local SERVERDATA_AUTH = 3
@@ -94,10 +124,10 @@ local socket = require("socket")
 local client = socket.tcp()
 assert(client:connect("127.0.0.1", 27015))
 
-local auth_id = send_rcon(client, SERVERDATA_AUTH, "knDz16xdGXIz57uCIbtt8J3dxe8AXwiZKZYvRW0W301F0pUZyu")
+local auth_id = send_rcon(client, SERVERDATA_AUTH, args.password)
 local size, id, packet_type, body = receive_rcon(client)
 if id == auth_id and packet_type == SERVERDATA_RESPONSE_VALUE and body == "" then
-	print("ignoring packet")
+	printf_verbose("ignoring packet")
 	size, id, packet_type, body = receive_rcon(client)
 end
 assert(packet_type == SERVERDATA_AUTH_RESPONSE)
@@ -114,20 +144,28 @@ while true do
 	local retval = execcommand(client, "net_status")
 	local connections = tonumber(retval:match("^Net status for host 127%.0%.0%.1:\n%- Config: Multiplayer, listen, (%d+) connections\n"))
 	if connections == nil then
-		print("WARN: unexpected response when trying to get status")
+		print_warn_verbose("WARN: unexpected response when trying to get status", retval)
 	elseif demo_path == nil and connections > 0 then
 		demo_path = os.date("!demos/%Y-%m-%d_%H-%M-%S")
 		print(string.format("connected; recording %q", demo_path))
 	elseif demo_path ~= nil and connections == 0 then
 		print(string.format("disconnected; recorded %q", demo_path))
+		if args.gzip then
+			local command = string.format("gzip \"%s/%s.dem\"", args.path, demo_path)
+			printf_verbose("compressing demo with %q", command)
+			local code = os.execute(command)
+			if code ~= 0 then
+				print("WARN: error when compressing demo")
+			end
+		end
 		demo_path = nil
 	end
 	if demo_path ~= nil then
-		local retval = execcommand(client, "record \""..demo_path.."\"")
+		retval = execcommand(client, "record \""..demo_path.."\"")
 		if retval:match("^Recording to (.*)%.dem%.%.%.\n$") == demo_path then
 			print(string.format("started recording %q", demo_path))
 		elseif retval ~= "Already recording.\n" and retval ~= "" then
-			print("WARN: unexpected response when trying to start recording")
+			print_warn_verbose("WARN: unexpected response when trying to start recording", retval)
 		end
 	end
 	socket.sleep(1)
