@@ -140,6 +140,25 @@ else
 end
 
 local demo_path
+local function exists(path)
+	local handle = io.open(path, "rb")
+	if handle == nil then
+		return false
+	end
+	handle:close()
+	return true
+end
+local function demo_path_to_path(demo_path)
+	return string.format("%s/%s.dem", args.path, demo_path)
+end
+local function compress(path)
+	local command = string.format("gzip \"%s\"", args.path, path)
+	printf_verbose("compressing demo with %q", command)
+	local code = os.execute(command)
+	if code ~= 0 then
+		print("WARN: error when compressing demo")
+	end
+end
 while true do
 	local retval = execcommand(client, "net_status")
 	local connections = tonumber(retval:match("^Net status for host 127%.0%.0%.1:\n%- Config: Multiplayer, listen, (%d+) connections\n"))
@@ -151,11 +170,14 @@ while true do
 	elseif demo_path ~= nil and connections == 0 then
 		print(string.format("disconnected; recorded %q", demo_path))
 		if args.gzip then
-			local command = string.format("gzip \"%s/%s.dem\"", args.path, demo_path)
-			printf_verbose("compressing demo with %q", command)
-			local code = os.execute(command)
-			if code ~= 0 then
-				print("WARN: error when compressing demo")
+			local i = 2
+			while true do
+				local path = demo_path_to_path(string.format("%s_%d", demo_path, i))
+				if not exists(path) then
+					break
+				end
+				compress(path)
+				i = i+1
 			end
 		end
 		demo_path = nil
@@ -164,6 +186,8 @@ while true do
 		retval = execcommand(client, "record \""..demo_path.."\"")
 		if retval:match("^Recording to (.*)%.dem%.%.%.\n$") == demo_path then
 			print(string.format("started recording %q", demo_path))
+		elseif retval == "Please start demo recording after current round is over.\n" then
+			printf_verbose("can't record yet")
 		elseif retval ~= "Already recording.\n" and retval ~= "" then
 			print_warn_verbose("WARN: unexpected response when trying to start recording", retval)
 		end
