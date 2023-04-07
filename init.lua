@@ -152,7 +152,7 @@ local function demo_path_to_path(demo_path)
 	return string.format("%s/%s.dem", args.path, demo_path)
 end
 local function compress(path)
-	local command = string.format("gzip \"%s\"", args.path, path)
+	local command = string.format("gzip \"%s\"", path)
 	printf_verbose("compressing demo with %q", command)
 	local code = os.execute(command)
 	if code ~= 0 then
@@ -170,6 +170,7 @@ while true do
 	elseif demo_path ~= nil and connections == 0 then
 		print(string.format("disconnected; recorded %q", demo_path))
 		if args.gzip then
+			compress(demo_path_to_path(demo_path))
 			local i = 2
 			while true do
 				local path = demo_path_to_path(string.format("%s_%d", demo_path, i))
