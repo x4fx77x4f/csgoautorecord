@@ -7,6 +7,11 @@ This is just a little toy project of mine. **No support will be provided.** This
 
 This probably won't get you VAC banned, as it just uses RCON and does not tamper with the game process or executables. However, use at your own risk anyway.
 
+## Usage
+1. Generate a long unpredictable password. One way to do this is with `pwgen -s 50 1`. The RCON server can be accessed by anyone on your local network.
+2. Add this to your launch options: `-usercon +rcon_password YOUR_PASSWORD_HERE`.
+3. Run the script with `./init.lua --password YOUR_PASSWORD_HERE autorecord --path "$HOME/.steam/steam/steamapps/common/Counter-Strike Global Offensive/game/csgo" --gzip` (exact parameters you should use varies depending on personal preference; do `./init.lua --help` for documentation).
+
 ## License
 Written in 2023 by x4fx77x4f
 
